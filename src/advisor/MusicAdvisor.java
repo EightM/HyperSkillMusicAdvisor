@@ -1,10 +1,30 @@
 package advisor;
 
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.List;
+
 public class MusicAdvisor {
 
     private boolean isAuth = false;
     private static final String CLIENT_ID = "16d31e7e0f764feca09204ca859bb14c";
     private static final String LOGIN_REQUIRE_MESSAGE = "Please, provide access for application.";
+    private String spotifyServerAddress = "https://accounts.spotify.com";
+    private final AuthServer server = new AuthServer(8080);
+
+    public MusicAdvisor(String spotifyServerAddress) {
+        this.spotifyServerAddress = spotifyServerAddress;
+    }
+
+    public MusicAdvisor() {
+    }
 
     public void handleInput(String input) {
         String command = "";
@@ -21,7 +41,7 @@ public class MusicAdvisor {
                 featuredReleases();
                 break;
             case "auth":
-                authorise();
+                beginAuthorise();
                 break;
             case "new":
                 newAlbums();
@@ -32,9 +52,6 @@ public class MusicAdvisor {
             case "playlists":
                 playlists(attribute);
                 break;
-            case "exit":
-                exitApp();
-                break;
             default:
                 throw new IllegalArgumentException();
         }
@@ -44,13 +61,48 @@ public class MusicAdvisor {
         System.out.println("---GOODBYE!---");
     }
 
-    private void authorise() {
+    private void beginAuthorise() {
+         System.out.println("use this link to request the access code:");
         String authUrl = String.format(
-                "https://accounts.spotify.com/authorize?client_id=%s&redirect_uri=https://www.example.com&response_type=code",
+                "%s/authorize?client_id=%s&redirect_uri=http://localhost:8080&response_type=code",
+                spotifyServerAddress,
                 CLIENT_ID);
         System.out.println(authUrl);
-        System.out.println("---SUCCESS---");
-        isAuth = true;
+         // server.startServer(this);
+    }
+
+    public void endAuthorise(String code) {
+        server.stopServer();
+        System.out.println("Code received");
+        makeAccessTokenRequest(code);
+    }
+
+    private void makeAccessTokenRequest(String code) {
+        String bodyRequest = getBodyRequest(code);
+        HttpClient client = HttpClient.newBuilder().build();
+        HttpRequest request = HttpRequest.newBuilder()
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .uri(URI.create("https://accounts.spotify.com/api/token"))
+                .POST(HttpRequest.BodyPublishers.ofString(bodyRequest))
+                .build();
+        try {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            System.out.println(response.body());
+            isAuth = true;
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private String getBodyRequest(String code) {
+        List<String> body = new ArrayList<>();
+        body.add("grant_type=authorization_code");
+        body.add(String.format("code=%s", code));
+        body.add("redirect_uri=http://localhost:8080");
+        body.add(String.format("client_id=%s", CLIENT_ID));
+        body.add(String.format("client_secret=%s", new StringBuilder(code).reverse().toString()));
+        return String.join("&", body);
     }
 
     private void playlists(String attribute) {
